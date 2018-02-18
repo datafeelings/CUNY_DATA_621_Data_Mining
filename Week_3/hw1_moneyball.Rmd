@@ -24,20 +24,71 @@ Description of the variables:
 
 ![moneyball_variables.png]()
 
-**Note** that the index variable will be discarded from the analysis
+**Note**  
+1) index variable will be discarded from the analysis  
+2) BATTING_H variable appears to be a sum of single base hits and the counts of hits from the other variables listing the base hits of the types 2B, 3B, HR - thus a new variable BATTING_1B will be introduced to separate the effect of singles hits, and BATTING_H will be discarded
+
 
 Data quality checks
 - Share of missing values
 - Proportion of unique observations
 
 ```{r}
-# Discard INDEX, remove TEAM_ prefix from variable names
+# Preprocessing steps
+# Discard INDEX, remove shorten variable names
 df_train = df_raw_train %>% select(-INDEX)
 names(df_train) = gsub("TEAM_", "", names(df_train))
+names(df_train) = gsub("BATTING", "BAT", names(df_train))
+names(df_train) = gsub("BASERUN", "BRU", names(df_train))
+names(df_train) = gsub("FIELDING", "FLD", names(df_train))
+names(df_train) = gsub("PITCHING", "PCH", names(df_train))
+names(df_train) = gsub("TARGET", "TRG", names(df_train))
 
-100*colMeans(is.na(df_train))
+# Introduce new variable and discard BAT_H
+df_train = df_train %>%
+  mutate(BAT_1B = BAT_H - BAT_2B - BAT_3B - BAT_HR) %>% 
+  select(-BAT_H)
+
+sort(100*colMeans(is.na(df_train)),decreasing = T)
 ```
 
+**Replacing NA variables**  
+- BATTING_HBP -  batters hit by pitch - 91.6% of NAs - assume NA is equal to zero   (CONSIDER KICKING OUT COLUMN)
+- BASERUN_CS - caught stealing - 33.9% of NAs - assume NA is equal to zero  - 
+- FIELDING_DP - double plays - 12.6% of NAs - assume NA is equal to zero  
+- BASERUN_SB -  stolen bases - 5.8% of NAs - assume NA is equal to zero  
+- BATTING_SO - strikeouts by batters - 4.5% of NAs - assume NA is equal to zero  
+- PITCHING_SO - strikeouts by pitchers - 4.5% of NAs - assume NA is equal to zero  
+  
+```{r}
+# Discard BATTING_HBP
+# Replace NA with mean value of non-empty records of a column
+
+df_train = df_train %>% 
+  select(-BAT_HBP) %>% 
+  mutate_all(funs(ifelse(is.na(.),mean(.,na.rm = T),.)))
+```
+
+
+Variable summaries
+
+```{r}
+summary(df_train)
+```
+
+Boxplots for each variable
+```{r}
+
+for (i in names(df_train)){
+  p = ggplot(df_train, aes(x= i, y = df_train[,i])) + geom_violin() 
+  ggsave(paste0(i,".png"))
+}
+
+```
+
+IDEA:
+1) Check outliers for validity
+2) Discretize variables with a lot of outliers into quantiles (this way all outliers should fall into 1 bucket and lose leverage)
 
 Pairwise plots to visualize distributions and inter-relationships
 
@@ -45,29 +96,56 @@ Pairwise plots to visualize distributions and inter-relationships
 # install.packages("GGally")
 library("GGally")
 
-ggpairs(select(df_train, matches("TARGET_|BATTING_")),
+ggpairs(select(df_train, matches("TRG_|BAT_")),
         title="Pairwise plots for the target and batting variables",
         upper = list(continuous = "cor"),
         lower= list(continuous = wrap("points", alpha = 0.3)))
 ```
 
 ```{r}
-ggpairs(select(df_train, matches("TARGET_|BASERUN_|FIELDING_")),
+ggpairs(select(df_train, matches("TRG_|BRU_|FLD_")),
         title="Pairwise plots for the target and baserun/fielding variables",
         upper = list(continuous = "cor"),
         lower= list(continuous = wrap("points", alpha = 0.3)))
 ```
 
 ```{r}
-ggpairs(select(df_train, matches("TARGET_|PITCHING_")),
+ggpairs(select(df_train, matches("TRG_|PCH_")),
         title="Pairwise plots for the target and pitching variables",
         lower= list(continuous = wrap("points", alpha = 0.3)))
 ```
 
 Correlation matrix
 
+```{r}
+ggcorr(df_train, nbreaks = 6,legend.size = 12,layout.exp = 2) + 
+  ggtitle("Pairwise correlations")
+```
+Note that apart from BATTING_H and BATTING_HR there are no at least moderately strong positive or negative correlations with the target variable.
+
 ### 2. DATA PREPARATION 
+
+fill from the above
 
 ### 3. BUILD MODELS 
 
+```{r}
+library(MASS)
+fit <- lm(TRG_WINS~.,data=df_train)
+step <- stepAIC(fit, direction="both")
+step$anova # display results
+
+```
+
+```{r}
+fit1 = lm(TRG_WINS ~ BAT_2B + BAT_3B + BAT_HR + BAT_BB + BAT_SO + BRU_SB + 
+    PCH_H + PCH_SO + FLD_E + FLD_DP + BAT_1B, data = df_train)
+
+summary(fit1)
+plot(fit1)
+fit1$model[2136,]
+```
+
+
 ### 4. SELECT MODELS
+
