@@ -1,0 +1,73 @@
+---
+title: "Homework 1: Moneyball"
+output: html_notebook
+---
+
+### Management summary
+
+*Describe the goal of the project, summarize the main steps and findings*
+
+### 1. DATA EXPLORATION 
+
+The dataset contains 2276 observations of 17 variables.  
+Each record (row) represents a professional baseball team from the years 1871 to 2006 inclusive. Each record has the performance of the team for the given year, with all of the statistics adjusted to match the performance of a 162 game season.
+
+```{r message=FALSE}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+df_raw_train = read_csv("moneyball-training-data.csv",progress = F) 
+```
+
+Description of the variables:
+
+![moneyball_variables.png]()
+
+**Note** that the index variable will be discarded from the analysis
+
+Data quality checks
+- Share of missing values
+- Proportion of unique observations
+
+```{r}
+# Discard INDEX, remove TEAM_ prefix from variable names
+df_train = df_raw_train %>% select(-INDEX)
+names(df_train) = gsub("TEAM_", "", names(df_train))
+
+100*colMeans(is.na(df_train))
+```
+
+
+Pairwise plots to visualize distributions and inter-relationships
+
+```{r}
+# install.packages("GGally")
+library("GGally")
+
+ggpairs(select(df_train, matches("TARGET_|BATTING_")),
+        title="Pairwise plots for the target and batting variables",
+        upper = list(continuous = "cor"),
+        lower= list(continuous = wrap("points", alpha = 0.3)))
+```
+
+```{r}
+ggpairs(select(df_train, matches("TARGET_|BASERUN_|FIELDING_")),
+        title="Pairwise plots for the target and baserun/fielding variables",
+        upper = list(continuous = "cor"),
+        lower= list(continuous = wrap("points", alpha = 0.3)))
+```
+
+```{r}
+ggpairs(select(df_train, matches("TARGET_|PITCHING_")),
+        title="Pairwise plots for the target and pitching variables",
+        lower= list(continuous = wrap("points", alpha = 0.3)))
+```
+
+Correlation matrix
+
+### 2. DATA PREPARATION 
+
+### 3. BUILD MODELS 
+
+### 4. SELECT MODELS
