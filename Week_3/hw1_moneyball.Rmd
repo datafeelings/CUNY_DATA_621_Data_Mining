@@ -1,6 +1,8 @@
 ---
-title: "Homework 1: Moneyball"
-output: html_notebook
+title: 'Homework 1: Moneyball'
+output:
+  html_notebook: default
+  html_document: default
 ---
 
 ### Management summary
@@ -17,6 +19,8 @@ library(dplyr)
 library(tidyr)
 library(readr)
 library(ggplot2)
+library(gridExtra)
+library(MASS)
 df_raw_train = read_csv("moneyball-training-data.csv",progress = F) 
 ```
 
@@ -76,15 +80,90 @@ Variable summaries
 summary(df_train)
 ```
 
-Boxplots for each variable
+```{r}
+sort(names(df_train))
+```
+
+
+Overview for each variable
+
 ```{r}
 
-for (i in names(df_train)){
-  p = ggplot(df_train, aes(x= i, y = df_train[,i])) + geom_violin() 
-  ggsave(paste0(i,".png"))
+plot_overview = function(df, x) {
+df = data.frame(df)
+y = df[,x]
+
+p1 = ggplot(df_train, aes(x= x, y = y)) + geom_boxplot() + xlab(x) + ylab("value")  
+p2 = ggplot() + geom_density(aes(x=y),na.rm = T) + 
+  geom_vline(aes(xintercept=mean(y,na.rm = T)), color = "red",linetype = 2) + xlab(x)
+p3 = ggplot() + geom_point(aes(sample=y), stat = "qq", size = 0.1)
+p4 = ggplot()  + geom_density(aes(x=log(y)),na.rm = T) + xlab(paste0("log(",x,")"))
+
+grid.arrange(p1, p2, p3, p4, nrow = 2)
 }
 
+df = df_train
+plot_overview(df,"TRG_WINS")
+
 ```
+
+Target - almost normal
+
+```{r}
+plot_overview(df,"BAT_1B")
+```
+BAT_1B - left-skewed, a lot of outliers with high values, and two with very low
+
+```{r}
+plot_overview(df,"BAT_2B")
+```
+BAT_2B - nearly normal, with an each an extremely low and high outlier
+
+```{r}
+plot_overview(df,"BAT_3B")
+```
+BAT_3B - right-skewed, many extremely high values (try log transform - but has three zero values)
+
+```{r}
+plot_overview(df,"BAT_BB")
+```
+BAT_BB - has a mostly normal part and a weird very low tail (consider binning)
+
+```{r}
+plot_overview(df,"BAT_HBP")
+```
+BAT_HBP - nearly normal when exists, but most values are missing
+
+```{r}
+
+
+trg_var_name = "TRG_WINS"
+x = "BAT_HBP"
+
+plot_target_cor = function(df,x,trg_var_name){
+
+df_cc = as.data.frame(df[complete.cases(df),]) 
+trg_cor = cor.test(df_cc[,x],df_cc[,trg_var_name])
+cor_out = paste("cor:",round(trg_cor$estimate,3),"p-val:" ,round(trg_cor$p.value,3))
+
+x_pos = quantile(df_cc[,x],0.97)
+y_pos = quantile(df_cc[,trg_var_name],0.001)
+p = ggplot(data = df_cc, aes_string(x=x,y=trg_var_name)) +
+  geom_point(size=1, alpha = 0.5) + geom_smooth(method = "lm") +
+  annotate("text", x = x_pos, y = y_pos,label = cor_out) +
+  ylab(trg_var_name)
+p
+}
+```
+
+```{r}
+x = "BAT_BB"
+trg_var_name = "TRG_WINS"
+
+
+grid.arrange(plot_overview(df,x), plot_target_cor(df,x,trg_var_name),nrow = 2,heights=c(6,6))
+```
+
 
 IDEA:
 1) Check outliers for validity
@@ -149,3 +228,7 @@ fit1$model[2136,]
 
 ### 4. SELECT MODELS
 
+
+Reference
+LMR, MARR books
+http://marcoghislanzoni.com/blog/2013/10/15/identifying-outliers-in-r-with-ggplot2/ 
