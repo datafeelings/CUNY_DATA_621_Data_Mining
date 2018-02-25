@@ -1,0 +1,540 @@
+---
+title: 'Homework 1: Moneyball'
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    fig_height: 8
+    self_contained: no
+---
+
+### Management summary
+
+*Describe the goal of the project, summarize the main steps and findings*
+
+### 1. DATA EXPLORATION 
+
+The dataset contains 2276 observations of 17 variables.  
+Each record (row) represents a professional baseball team from the years 1871 to 2006 inclusive. Each record has the performance of the team for the given year, with all of the statistics adjusted to match the performance of a 162 game season.
+
+```{r message=FALSE}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(gridExtra)
+
+df_raw_train = read_csv("moneyball-training-data.csv",progress = F) 
+```
+
+Description of the variables:
+
+![moneyball_variables.png]()
+
+#### Data preprocessing before exploration
+
+Based on the data description, the following preprocessing steps will be applied before exploring the dataset:  
+
+1) the index variable will be discarded from the analysis  
+2) BATTING_H variable appears to be a sum of single base hits and the counts of hits from the other variables listing the base hits of the types 2B, 3B, HR - thus a new variable BATTING_1B will be introduced to separate the effect of singles hits, and BATTING_H will be discarded
+3) all variable names will be abbreviated to correspondent prefixes for easier print output handling (e.g. "BATTING_" abbreviated as "BAT_" and so on)
+  
+
+#### Data quality checks  
+
+This steps checks the share of missing values per variable. The findings are summarized in the table below:  
+
+```{r}
+# Preprocessing steps
+# Discard INDEX, remove shorten variable names
+df_train = df_raw_train %>% select(-INDEX)
+names(df_train) = gsub("TEAM_", "", names(df_train))
+names(df_train) = gsub("BATTING", "BAT", names(df_train))
+names(df_train) = gsub("BASERUN", "BRU", names(df_train))
+names(df_train) = gsub("FIELDING", "FLD", names(df_train))
+names(df_train) = gsub("PITCHING", "PCH", names(df_train))
+names(df_train) = gsub("TARGET", "TRG", names(df_train))
+
+# Introduce new variable and discard BAT_H
+df_train = df_train %>%
+  mutate(BAT_1B = BAT_H - BAT_2B - BAT_3B - BAT_HR) %>% 
+  select(-BAT_H)
+
+na_share_df = data.frame(percent_missing = sort(100*colMeans(is.na(df_train)),decreasing = T))
+na_share_df
+```
+
+The variables with a significant share of missing data are "BAT_HBP", "BRU_CS", and "FLD_DP".
+
+#### Correlation matrix
+
+The following correlation matrix provides insight into the pairwise relationships between all of the variables in the dataset.  
+```{r}
+library(GGally)
+ggcorr(dplyr::select(df_train, sort(names(df_train))), 
+       method=c("pairwise.complete.obs","pearson"),nbreaks = 6,legend.size = 12,
+       layout.exp = 5,label=T,label_size = 2,legend.position = "right",size=3,hjust = 0.75) + 
+  ggtitle("Pairwise correlations")
+```
+Findings from the correlation matrix analysis:  
+  
+1) The variables "BAT_SO", "FLD_DP", and "BRU_CS" are both not correlated with the target, and relatively strongly correlated to other predictors ("BAT_SO" - positively with "BAT_HR", "FLD_DP" - negatively with "FLD_E", "BRU_CS" - positively with "BRU_SB"). They should be therefore excluded from any subsequent models in order to avoid multicollinearity.  
+2) The variables "BAT_HR" and "PCH_HR" are extremly strongly correlated with each other. Only one of the two variables should be used in the modeling in order to avoid multicollinearity.  
+3) There is a fairly strong positive correlation (+0.7) between the variables "PCH_H" (pitching hits allowed) and "FLD_E" (fielding errors) which cannot be explained withot the domain knowledge of baseball rules. 
+
+
+#### Individual variable analysis and target correlation control
+
+Each of the variables in the dataset was inspected individually in terms of its distribution, as well as in regard to its relationship with the target variable. The following parameters and analytical tools were applied in order to assess the nature of the distribution of each variable:
+
+- Variable summary statistics (min, max, median, mean)  
+- Box plot, probability density plot, probability density plot of the log-transformed values, normal quantile-quantile plot
+  
+Then, a scatter plot of the relationship between each predictor and the target variable was used together with Pearson correlation of the variable and its log-transformation vs. the target in order to undestand if the relationship with the target is directed (positive or negative) and sufficiently linear. Additional plots and transformations were used as required in order to test the relationship of transformed variables with the target.   
+An example of the analysis for the variable "BAT_2B" is provided below, the functions for the analysis of the other variables are provided in the appendix.
+
+**BAT_2B summary statistics**
+```{r}
+print(summary(df_train$BAT_2B))
+```
+
+
+```{r echo=FALSE}
+
+plot_overview = function(df, x) {
+df = data.frame(df)
+y = df[,x]
+
+p1 = ggplot(df, aes(x= x, y = y)) + geom_boxplot() + xlab(x) + ylab("value") + 
+  ggtitle(x)
+p2 = ggplot() + geom_density(aes(x=y),na.rm = T) + 
+  geom_vline(aes(xintercept=mean(y,na.rm = T)), color = "red",linetype = 2) + xlab(x) +
+   ggtitle("")
+p3 = ggplot() + geom_point(aes(sample=y), stat = "qq", size = 0.1)
+p4 = ggplot()  + geom_density(aes(x=log(y)),na.rm = T) + xlab(paste0("log(",x,")"))
+
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+}
+
+plot_target_cor = function(df,x,trg_var_name){
+
+df_cc = df[,c(x,trg_var_name)]
+df_cc = as.data.frame(df_cc[complete.cases(df_cc),]) 
+trg_cor = cor.test(df_cc[,x],df_cc[,trg_var_name])
+df_cc$x_log = log(df_cc[trg_var_name>0,x])
+trg_log_cor = cor.test(df_cc[df_cc$x_log>0,"x_log"],df_cc[df_cc$x_log>0,trg_var_name])
+
+cor_out = paste("cor:",round(trg_cor$estimate,3),
+                "p-val:", ifelse(trg_cor$p.value<0.01,"<0.01",round(trg_cor$p.value,3)))
+cor_out_log = paste("cor (log):",round(trg_log_cor$estimate,3),
+                "p-val:", ifelse(trg_log_cor$p.value<0.01,"<0.01",round(trg_log_cor$p.value,3)))
+
+x_pos = quantile(df_cc[,x],0.9)
+y_pos_0 = quantile(df_cc[,trg_var_name],0.006)
+y_pos_1 = quantile(df_cc[,trg_var_name],0.004)
+
+p = ggplot(data = df_cc, aes_string(x=x,y=trg_var_name)) +
+  geom_point(size=1, alpha = 0.5) + geom_smooth(method = "lm") +
+  annotate("text", x = x_pos, y = y_pos_0,label = cor_out,size=3) +
+  annotate("text", x = x_pos, y = y_pos_1,label = cor_out_log, size=3) +
+  ylab(trg_var_name) + ggtitle(paste(x,"vs",trg_var_name))
+p
+}
+
+plot_overview_target = function(df,x,trg_var_name){
+  grobs = list(plot_overview(df,x),plot_target_cor(df,x,trg_var_name))
+  grid.arrange(grobs = grobs, nrow = 1,widths=c(5,4), 
+               top = paste(x,"overview and correlation vs.",trg_var_name))
+}
+
+```
+
+**BAT_2B distribution overview**
+
+```{r}
+df = df_train
+trg_var_name = "TRG_WINS"
+plot_overview_target(df,"BAT_2B",trg_var_name)
+```
+
+```{r}
+
+plot_overview(df,"TRG_WINS")
+
+```
+  
+Target - almost normally distributed
+
+```{r}
+plot_overview_target(df,"BAT_1B",trg_var_name)
+```
+  
+BAT_1B - right-skewed, a lot of outliers with high values, and two with very low. Positive correlation (+0.2)
+
+
+BAT_2B - nearly normal, with an each an extremely low and high outlier; positive correlation (+0.29)
+
+```{r}
+plot_overview_target(df,"BAT_3B",trg_var_name)
+```
+BAT_3B - right-skewed, many extremely high values; some positive correlation (+0.143); log transform helps to reduce the leverage of extremely high values somewhat while maintaining r=+0.116 
+
+```{r}
+# log(df_train$BAT_3B)
+qplot(df_train$BAT_3B,df_train$TRG_WINS) + geom_smooth(method="lm")
+qplot(log(df_train$BAT_3B),df_train$TRG_WINS) + geom_smooth(method="lm")
+
+```
+
+
+```{r}
+plot_overview_target(df,"BAT_BB",trg_var_name)
+```
+BAT_BB - has a mostly normal part and a weird very low tail (consider binning); positive correlation (+0.233);Exclude values below 250
+
+```{r}
+grid.arrange(qplot(df_train$BAT_3B,df_train$TRG_WINS) + geom_smooth(method="lm"),
+qplot(log(df_train$BAT_3B),df_train$TRG_WINS) + geom_smooth(method="lm"),ncol=2)
+```
+
+
+```{r}
+x = "BAT_HR"
+plot_overview_target(df,x,trg_var_name)
+```
+BAT_HR - has a high number of zero observations causing a left skew; positive correlation (+0.176); binning the variable into above and below the median number of home runs (102) produces significantly different mean values of the target
+
+```{r}
+median(df_train$BAT_HR)
+a = df_train %>% mutate(BAT_HR_bin = ifelse(BAT_HR<=102,"<=102",">102"))
+ggplot(aes(factor(BAT_HR_bin),TRG_WINS),data=a) + geom_boxplot(notch = T)
+```
+
+
+```{r}
+x = "BAT_HBP"
+plot_overview_target(df,x,trg_var_name)
+```
+BAT_HBP - very high share of missing values and no correlation for the available values. To be excluded from the model.
+
+```{r}
+
+x = "BAT_SO"
+plot_overview_target(df,x,trg_var_name)
+
+```
+
+BAT_SO - bimodal distribution - need binning. Also not really correlated.
+
+
+```{r}
+x = "BRU_SB"
+plot_overview_target(df,x,trg_var_name)
+
+```
+
+BRU_SB - positively correlated with the target (+0.135), but very right-skewed. A log-transform log(df_train$BRU_SB) where it is >0 makes it normal while maintaining the correlation at +0.12.
+
+
+```{r}
+x = "BRU_CS"
+plot_overview_target(df,x,trg_var_name)
+
+```
+
+BRU_CS - no correlation, right skewed. Remove from the model as log-transform has no correlation either.
+
+
+```{r}
+plot_overview_target(df,"PCH_H",trg_var_name)
+```
+PCH_H - very strong right skew of the data. Data should be filtered before using in the model approx to less than 1 SD of the mean (less than 3186).
+
+```{r}
+filt_val_upper = mean(df_train$PCH_H) + 1*sd(df_train$PCH_H)
+filt_val_lower = mean(df_train$PCH_H) - 1*sd(df_train$PCH_H)
+
+a = df_train %>% filter(PCH_H<=filt_val_upper)
+cor(a$PCH_H,a$TRG_WINS)
+ggplot(aes(PCH_H,TRG_WINS),data=a) + geom_point() + geom_smooth()
+plot_overview_target(a,"PCH_H",trg_var_name)
+```
+
+```{r}
+plot_overview_target(df,"PCH_HR",trg_var_name)
+```
+PCH_HR - two spikes in the distribution due to some zero values, but overall positive correlation with the target (+0.189).
+
+
+```{r}
+qplot(log(df_train$PCH_BB),df_train$TRG_WINS) + geom_smooth(method="lm",show.legend = T)
+```
+
+
+```{r}
+# plot_overview_target(df,"PCH_BB",trg_var_name)
+qplot(log(df_train$PCH_BB),log(df_train$TRG_WINS)) + geom_smooth(method="lm",show.legend = T)
+```
+PCH_BB - normally distributed except for a few extreme outliers, weak positive correlation (+0.12). 
+Log-transform improves positive correlation (+0.16)
+
+
+```{r}
+plot_overview_target(df,"PCH_SO",trg_var_name)
+```
+
+```{r}
+tmp = df[df$PCH_SO<2000 & df$PCH_SO>0,]
+plot_overview_target(tmp,"PCH_SO",trg_var_name)
+```
+
+
+PCH_SO - excluding the outliers, close to normally distributed; there is no correlation with the target variable
+
+
+```{r}
+plot_overview_target(df,"FLD_E",trg_var_name)
+```
+FLD_E - very strong right skew, weak negative correlation. 
+Log-transform makes the distribution closer to normal while maintaining r = -0.15. However, Heteroscedasticity persists.
+
+```{r}
+qplot(log(df_train$FLD_E),log(df_train$TRG_WINS)) + geom_smooth(method="lm",show.legend = T)
+```
+
+```{r}
+plot_overview_target(df,"FLD_DP",trg_var_name)
+```
+FLD_DP - missing values, normally distributed but no correlation with the target. Remove from the model.
+
+
+
+#### Summary of findings from the exploration of variable distributions and pairwise relationships with the target variable
+
+| Variable (shortcut) name | Findings about the distribution | Relationship with the target | Use in the model / required transformations |
+|--------------------------|-------------------------------------------------------------------------|-----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| TRG_WINS | almost normally distributed | - | The observation where the target variable equals zero should be excluded because a prediction of zero wins in a year is not practically useful and unnecessarily extends the domain of the model |
+| BAT_1B | right-skewed, a lot of outliers with high values, and two with very low | positive correlation (+0.2) | This variable is the result of a transformation of the original BAT_H variable (subtraction of BAT_2B, BAT_3B, BAT_HR) |
+| BAT_2B | nearly normal, with an each an extremely low and high outlier | positive correlation (+0.29) | Should be considered in the model |
+| BAT_3B | right-skewed, many extremely high values | weak positive correlation (+0.143) | Log transform helps reduce the leverage of extremely high values somewhat while maintaining r=+0.116 (zero values to be excluded) |
+| BAT_BB | mostly normal, but a number of very low observations skew to the left | positive correlation (+0.233) | Exclude values below 250 |
+| BAT_HR | has a high number of zero observations causing a left skew | positive correlation (+0.176) | Binning the variable into above and below the median number of home runs (102) produces significantly different mean values of the target |
+| BAT_HBP | 92% of observations are missing | - | Excluded due to missing observations |
+| BAT_SO | 5% of observations are missing, bimodally distributed | no correlation | Excluded due to missing correlation with the target |
+| BRU_SB | 6% of observations are missing, strongly right-skewed | positive correlation (+0.135) | A log-transform corrects the skew while maintaining the correlation at r=+0.12 |
+| BRU_CS | 33% of observations are missing, strongly right-skewed | no correlation | Excluded due to missing observations and no correlation with the target |
+| FLD_DP | 13% of observations are missing, normally distributed | no correlation | Excluded due to missing observations and no correlation with the target |
+| FLD_E | very strong right skew | weak negative correlation (-0.176) | Log-transform makes the distribution closer to normal while maintaining r = -0.15. However, heteroscedasticity persists. |
+| PCH_BB | normally distributed except for a few extreme outliers | weak positive correlation (+0.12) | Log-transform improves the distribution, and the correlation strength (r=+0.16) |
+| PCH_H | very strong right skew of the data | Negative correlation (-0.11) | PCH_H - very strong right skew of the data. Data should be filtered before using in the model approx to less than 1.5 SD of the mean (less than 3889). |
+| PCH_HR | two spikes in the distribution due to a few zero values | Positive correlation with the target (+0.189) | The positive relationship observed in the data does not make logical sense. Probably a data definition issue. Excluded from the model due to the extremely high correlation with "BAT_HR" (that is positively correlated with the target as expected) |
+| PCH_SO | excluding the outliers, close to normally distributed | No correlation | Excluded from the model due to no correlation with the target |
+
+
+  
+### 2. DATA PREPARATION  
+  
+In this step, functions were developed to create the subset of the variables that would used in the modeling using the findings and recommendations from the previous step. These functions take care of the following:
+  
+- Add the new variable BAT_1B  
+- Exclude the variables not considered in the model  
+- Filter outliers
+- Handle missing variables by replacing them with imputed values  
+- Transform the variables selected for log-transform or binning  
+
+**Variable exclusion**  
+The following variables will not be used in modeling: INDEX, BAT_H, BAT_HBP, BAT_SO, BRU_CS, FLD_DP, PCH_HR, PCH_SO.
+
+**Data imputation**    
+The only variable with missing observations in the analysis is BRU_SB (6% missing observations). The missing values are imputed with a linear regression of the BRU_SB variable onto the other variables in the dataset. This should allow to maintain the direction of the relationship between the variables that is found among the non-empty data points.
+
+**Variable transformation**  
+  
+After multiple training and model selection iterations it was concluded that binning and log-transformation of the variables did not significantly improve the resulting model precision.
+
+**Outlier filtering**  
+Outliers were filtered using the univariate diagnostic plots as discussed above, as well as regression diagnostic plots (e.g. standardised residuals vs. leverage plot). Excluding outliers has significantly improved model performance based on the F-statistic and adjusted R-squared.
+
+```{r}
+
+library(simputation)
+
+variable_preparation = function(df_raw) {
+  
+  # Rename columns
+  df_out = as.tbl(df_raw)
+  names(df_out) = gsub("TEAM_", "", names(df_out))
+  names(df_out) = gsub("BATTING", "BAT", names(df_out))
+  names(df_out) = gsub("BASERUN", "BRU", names(df_out))
+  names(df_out) = gsub("FIELDING", "FLD", names(df_out))
+  names(df_out) = gsub("PITCHING", "PCH", names(df_out))
+  
+  
+  df_out = df_out %>% 
+    # New variable
+    mutate(BAT_1B = BAT_H - BAT_2B - BAT_3B - BAT_HR) %>% 
+    
+    # Discarding of deselected variables
+    dplyr::select(-INDEX, -BAT_H, -BAT_HBP, -BAT_SO, -BRU_CS, -FLD_DP, -PCH_HR, -PCH_SO) %>% 
+    
+    # Outlier filtering
+    filter(PCH_H < 3000) %>%
+    filter(BAT_BB > 250) %>% 
+    
+    # Data imputation
+    impute_lm(BRU_SB ~ .) 
+    
+  return(df_out)
+}
+
+
+
+df_train_proc = variable_preparation(df_raw_train)
+
+# Remove high-leverage outliers (based on diagnostic plots)
+df_train_proc = df_train_proc %>%  slice(-c(2149,1720,1903,1503,2107))
+
+# Rename the target variable for brevity
+names(df_train_proc) = gsub("TARGET", "TRG", names(df_train_proc))
+
+ggcorr(dplyr::select(df_train_proc, sort(names(df_train_proc))), 
+       method=c("pairwise.complete.obs","pearson"),nbreaks = 6,legend.size = 12,
+       layout.exp = 5,label=T,label_size = 2,legend.position = "right",size=3,hjust = 0.75) + 
+  ggtitle("Pairwise correlations - prepared training dataset")
+
+```
+
+ 
+
+### 3. BUILD MODELS 
+
+**Model building**  
+After preparing the data, the multiple linear models were being built and selected using stepwise model selection (backward selection from a full model). The criterion of the best model is adjusted R-squared. The chart below illustrates that a model with 8 predictors maximizes this metric (and a 9-predictor model already seems to overfit the data). However, as the adjusted R-squared value for the 7-parameter model is only somewhat lower than that of the more complex model, a model with 7 predictors was selected as the final one.
+
+```{r}
+library(leaps)
+fit = regsubsets(TRG_WINS~.,data=df_train_proc,nvmax = 9,method = "backward")
+
+rs =summary(fit)
+plot(1:9,rs$adjr2,xlab="No. of Parameters",ylab="Adjusted R-sq.", main="Regression model parameter count vs. Adj. R-squared")
+text(1:9,rs$adjr2-0.02, round(rs$adjr2, 3), cex=0.7)
+
+rs$which [which.max(rs$adjr2),]
+```
+
+The selected model uses the following parameters:  
+
+TRG_WINS ~ BAT_2B +BAT_3B +BAT_HR +BAT_BB +BRU_SB +PCH_H +FLD_E
+  
+Using regression model diagnostic plots, five high-leverage outlier observations have been removed, and the model was subsequently re-trained on the data.
+
+The plot of the residuals vs. fitted values is provided below. Additional diagnostic plots for the selected model can be genreated using the code provided in the appendix.
+
+```{r}
+fit = lm(TRG_WINS ~ BAT_2B +BAT_3B +BAT_HR +BAT_BB +BRU_SB +PCH_H +FLD_E, data = df_train_proc)
+plot(fit)
+```
+
+
+**Model interpretation**
+
+The model yields the following predictor coefficients (all coefficients except for the one for BAT_2B are significant at p<0.001). The magnitude and direction of the coefficients are indicative of their relative impact.
+
+```{r}
+data.frame(coefficient=sort(fit$coefficients,decreasing = T))
+```
+
+We can see that the strongest positive relationship is with BAT_3B (triples by batters), BRU_SB (stolen bases), and home runs by batters. The strongest negative relationship is with FLD_E (fielding errors). Surprisingly,  BAT_2B doubles made by batters has a very low, but negative coefficient (p-value =0.08). The explanation could be that in order for a team to win, it should have proportionally more triples and homeruns, and correspondingly less doubles by batters. Teams that have a lot of singles or doubles in a season would not be able to win as frequently as teams with a lot of triples, homeruns, and stolen bases.
+
+
+```{r}
+summary(fit)
+```
+
+
+
+### 4. SELECT MODELS
+
+The selected model can be evaluated against the following model:   
+- a full model using all the variables (only the BAT_HBP variable excluded due to the 92% of NAs) and log-transformed response (for RMSE compatibility)  
+
+The performance can be compared on the training data and the provided hold-out dataset that was not part of the training data.
+
+**Model comparison on training data**
+
+The following model parameters are compared on the training data: adjusted R-squared, RMSE, F-statistic, and model complexity.
+
+```{r}
+
+fit1 = lm(TARGET_WINS ~ ., data = select(df_raw_train,-TEAM_BATTING_HBP))
+
+fit_smr = summary(fit)
+fit1_smr = summary(fit1)
+
+
+model_metrics = data.frame(
+  rbind(
+    c(adj_rsq = fit_smr$adj.r.squared,rmse=fit_smr$sigma, f_stat=fit_smr$fstatistic[1],
+      variables=fit_smr$fstatistic[2]),
+    c(adj_rsq = fit1_smr$adj.r.squared,rmse=fit1_smr$sigma, f_stat=fit1_smr$fstatistic[1],
+      variables=fit1_smr$fstatistic[2])))
+
+row.names(model_metrics) = c("selected model","full model")
+model_metrics
+
+```
+
+We can see that while the full model appears to have a higher adjusted R-squared and lower RMSE, its F-statistic is much lower indicating that a number of its parameters are not statistically significant (which is confirmed by inspecting the model summary - code provided in the appendix). As we have observed in the model building step, a model with 9 variables already showed signs of overfit, and thus a full model most definitely overfits the data.
+
+While the selected model inherently cannot capture the full variability of the dataset, it remains fairly balanced in terms of the residuals, as shown in the chart below:
+
+```{r}
+grid.arrange(qplot(fit$fitted.values,fit$residuals, ylim = c(-40,40),xlim = c(35,140)
+                   ,main="Selected model: Fitted vs. residuals"),
+             qplot(fit1$fitted.values,fit1$residuals, ylim = c(-40,40),xlim = c(35,140)
+                   ,main = "Full model: Fitted vs. residuals"),
+             ncol=2)
+
+```
+
+
+
+**Model evaluation on the test data**
+
+The test data is processed using the same function that prepared the training data set for modeling and then used as input to predict the value of the TRG_WINS variable.
+The predicted data is stored in the file "hw1_evaluation_fitted.csv"
+
+```{r, warning=F,message=F}
+df_test_raw = read_csv("moneyball-evaluation-data.csv")
+
+# Prepare the test dataset
+
+ df_out = as.tbl(df_test_raw)
+  names(df_out) = gsub("TEAM_", "", names(df_out))
+  names(df_out) = gsub("BATTING", "BAT", names(df_out))
+  names(df_out) = gsub("BASERUN", "BRU", names(df_out))
+  names(df_out) = gsub("FIELDING", "FLD", names(df_out))
+  names(df_out) = gsub("PITCHING", "PCH", names(df_out))
+  
+  
+  df_out = df_out %>% 
+    # New variable
+    mutate(BAT_1B = BAT_H - BAT_2B - BAT_3B - BAT_HR) %>% 
+    
+    # Discarding of deselected variables
+    dplyr::select(-INDEX, -BAT_H, -BAT_HBP, -BAT_SO, -BRU_CS, -FLD_DP, -PCH_HR, -PCH_SO)  
+  
+  df_test_proc = df_out
+
+# Predict the response and store the output
+
+test_fit = data.frame("TARGET_WINS"=predict(fit,newdata = df_test_proc))
+qplot(test_fit$TARGET_WINS, main="Histogram of the predicted test values")
+write_csv(data.frame(test_fit),"hw1_evaluation_fitted.csv")
+```
+
+
+Reference
+LMR, MARR books
+http://www.markvanderloo.eu/yaRb/2016/09/13/announcing-the-simputation-package-make-imputation-simple/ 
+http://marcoghislanzoni.com/blog/2013/10/15/identifying-outliers-in-r-with-ggplot2/ 
