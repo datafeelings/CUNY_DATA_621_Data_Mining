@@ -537,4 +537,3 @@ write_csv(data.frame(test_fit),"hw1_evaluation_fitted.csv")
 Reference
 LMR, MARR books
 http://www.markvanderloo.eu/yaRb/2016/09/13/announcing-the-simputation-package-make-imputation-simple/ 
-http://marcoghislanzoni.com/blog/2013/10/15/identifying-outliers-in-r-with-ggplot2/ 

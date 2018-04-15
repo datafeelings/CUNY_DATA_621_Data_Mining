@@ -1,12 +1,14 @@
 ---
-title: "Homework #3: Logistic Regression"
+title: 'Homework #3: Logistic Regression'
 author: "Dmitriy Vecheruk"
 date: "4/14/2018"
-output: html_document
+output:
+  word_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
 ```
 
 ### Management summary
@@ -357,17 +359,18 @@ write_csv(data.frame(eval_predict),"model_m3_eval_predictions.csv")
 ```
 
 The output of the model on the evaluated data is available under the following URL:
-[link]()
+[model_m3_eval_predictions.csv](https://raw.githubusercontent.com/datafeelings/CUNY_DATA_621_Data_Mining/master/Week_11/model_m3_eval_predictions.csv)
 
 ### Appendix
 
 The full R code for the analysis in Rmd format is available under the following URL:
-[link]()
+[hw3_binary_logistic_regression_caret.Rmd](https://github.com/datafeelings/CUNY_DATA_621_Data_Mining/blob/master/Week_11/hw3_binary_logistic_regression_caret.Rmd)
 
 **Additional charts on pairwise relationships between the continous predictors**
 
 The charts below show pairwise scatter plots between continuous variables with color signifying the levels of the target variable.
-```{r include=F}
+
+```{r }
 
 # Plot scatter for the first 4 features
 feature_subset = c("indus","tax","nox","age","lstat")
@@ -382,7 +385,7 @@ featurePlot(x = df_raw_train[1:4],
             )
 ```
 
-```{r include=F}
+```{r}
 # Plot scatter for the next 4 features
 
 featurePlot(x = df_raw_train[,5:8], 
@@ -394,7 +397,7 @@ featurePlot(x = df_raw_train[,5:8],
                                                    col = c("black", "red"))))
 ```
 
-```{r include=F}
+```{r}
 # Plot scatter for the next 4 features
 
 featurePlot(x = df_raw_train[,9:12], 
