@@ -1,0 +1,413 @@
+---
+title: "Homework #3: Logistic Regression"
+author: "Dmitriy Vecheruk"
+date: "4/14/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+### Management summary
+
+This project builds a predictive model that estimates the risk of higher-than-median crime rate in a neighborhood of Boston. After an initial variable inspection, three logistic regression models were prepared and compared on test data. Based on classification performance metrics, the best model is suggested and applied on the evaluation dataset.
+
+### 1. DATA EXPLORATION 
+
+The training dataset contains 466 observations of 13 variables (12 predictors and one response).  
+Each record (row) represents a set of properties of a city neighborhood as predictor variables, and a binary response variable: whether the crime rate in the neighborhood is above the median crime rate (1) or not (0).
+  
+The **variables** are:
+![](figure/variables.png)
+
+```{r message=FALSE}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(caret)
+library(DataExplorer)
+library(AppliedPredictiveModeling)
+
+df_raw_train = read_csv("crime-training-data_modified.csv",progress = F) 
+```
+
+#### 1.1. Univariate analysis
+
+Summaries for the individual variables are provided below.  
+```{r}
+summary(df_raw_train)
+```
+
+From the summaries, we can see that no variables have missing data, and that the variables `target` and `chas` are binary with the values of 0 and 1.
+  
+Frequency counts of class occurrence for the two descrete variables are provided below
+```{r}
+df_raw_train$target = as.factor(df_raw_train$target)
+df_raw_train$chas = as.factor(df_raw_train$chas)
+
+df = split_columns(data = df_raw_train)
+```
+
+```{r}
+## View distribution of all discrete variables
+plot_bar(df$discrete, title = "Frequency counts for discrete variables")
+```
+  
+Histograms of the distributions of the remaining 11 continuous variables are provided below
+
+```{r}
+## View distribution of all continuous variables
+plot_histogram(df$continuous, "Histograms of continous variables")
+```
+  
+We can see that the variables `zn`, `indus`, `rad`, `tax`, and `pratio` all have a significant number of observations that do not match the rest of the distribution of the data. Also we observe that no variables have zero or near-zero variance. The most imbalanced variable is `zn`.
+  
+#### 1.2. Bivariate analysis
+  
+The pairwise correlations between the continuous variables are displayed below
+
+```{r}
+## View correlation of all continuous varaibles
+plot_correlation(df_raw_train, type = "continuous")
+```
+
+  
+This analysis points to fairly strong relationships between several predictor variables:
+  
+- `rad` and `tax` are very strongly positively correlated (r = 0.91)
+- `indus` is positively correlated with `tax`, `nox`, `age`, and `lstat`  
+- `dis` is negatively correlated with `indus`, `nox`, and `age`
+  
+These relationships and their connection to the target class are inspected in scatter plots provided in the appendix.
+  
+
+  
+**Pairwise relationship with the target variable**
+  
+```{r}
+## View continuous distribution based on the target levels
+plot_boxplot(df_raw_train, "target")
+
+```
+  
+Analyzing the boxplots we can see that the means of all of the continuous variables are different depending on the level of the `target` variable, with the exception of the `rm` variable which appears not to carry much information regarding the split of the `target` values.
+  
+Looking at the counts of the `chas` factor variable vs. the `target`, we also observe a clear difference in the frequencies:
+
+```{r}
+## View the levels of chas based on the target levels
+g = ggplot(df_raw_train, aes(target))
+g + geom_bar(aes(fill = chas),position = "dodge") + 
+  ggtitle("Pairwise counts of observations for the descrete variables")
+```
+
+```{r}
+table(df_raw_train$target,df_raw_train$chas,dnn = c("target","chas"))/nrow(df_raw_train)
+```
+  
+When `chas` equals 1, the `target` is almost twice more often equals 1 as well.
+  
+**Summary of the findings**
+  
+1. There is evidence of collinearity between multiple continous variables that could affect the resulting model.  
+2. With the exception of `rm`, all continous variables, as well as the discrete variable `chas` show different means / count proportions when split by the target variable, this all of these predictors should be considered in a regression model.
+3. While some of the continous predictors show highly skewed distributions, these appear to be related to the response variable.  
+
+
+### 2. DATA PREPROCESSING  
+
+
+### 2.1. Missing data and near-zero variables
+
+The training dataset has no missing values, and no variables have a near-zero variance.
+
+
+### 2.2. Further data preprocessing  
+
+Two variables were converted to factors as they each have just two levels: `target`, and `chas` (1 if the suburb borders Charles river, and 0 if not).
+
+
+### 3. BUILD MODELS
+  
+In this step, several logistic regression models will be built to predict the `target` class assignment. Using the functions of the **caret** package, the parameters for each model are estimated using 5-fold cross-validation repeated 10 times.
+
+The models are built on the 80% sample of the training data, and the remaining 20% are used to assess the model performance on out-of-sample data in order to avoid choosing an overfitting model as the best model.
+Regarding in-sample performance, the model accuracy will be compared to the baseline of 51% which would occur if the model assigned each observation to the most frequent class in the training data.
+  
+#### 3.1. Full model  
+  
+The first model considered is the model with all of the predictors. While this model can be overfitting the data due to the issues highlighted in the data exploration step, it could be a good reference for further simpler models in terms of the accuracy (as the accuracy of a better model should not be significantly worse than that of the full model).
+
+```{r}
+# Set up the CV routine 
+set.seed(123) 
+fitControl = trainControl(## 10-fold CV
+                           method = "repeatedcv",
+                           number = 5,
+                           ## repeated ten times
+                           repeats = 10)
+
+# Split into training and test
+
+df_index = createDataPartition(df_raw_train$target, p = .8, list = FALSE)
+df_train = df_raw_train[ df_index, ]
+df_test = df_raw_train[-df_index, ]
+
+```
+
+```{r warning =F}
+# Train the full model
+library("e1071")
+
+m1 = train(target ~ ., data = df_train, 
+                 method = "glm", 
+                 trControl = fitControl)
+
+```
+
+**Model summary**
+
+```{r}
+summary(m1)
+```
+
+```{r}
+m1$results
+```
+
+```{r}
+varImp(m1,scale = F)
+```
+
+  
+From the model summary we can see the following:  
+
+1) The model shows a relatively high accuracy on the training data (90% vs. 51% baseline).  
+2) The deviance residuals are not quite normally distributed around zero indicating residual structure in the data not captured by the model.  
+3) Based on the z-statistic of the parameters, the most important predictors are (ordered by desceding importance, sign in brackets means direction of the relationship): `nox`(+), `rad`(+), `dis`(+), `ptratio`(+), `age`(+), and `tax`(-).  
+4) Both `indus` and `chas` are not significant in the full model, most likely because of the collinearity issues discussed in the previous section.  
+  
+**Interpretation of the regression coefficients**  
+The relationship with crime rate could be explained intuitively for the predictors `nox` (nitrogen oxides concentration), `age` (share of pre-1940 buildings), `ptratio` (pupil-teacher ratio), `rad`(proximity to radial highway), `dis`(distance to employment center), and `tax`(property tax rate). Considered together, they describe an urbanized part of town (highways, low air quality) with lower-quality living conditions (old, lower-value buildings), lower education standard (insufficient teachers), and lack of support for employment (distance to employment centers).  
+However, the predictor `medv` (median value of owner-occupied homes) is positively linked to the crime probability. This can be either explained by multicollinearity, or could be a sign of a neighborhood that is a target of burglaries, as its overall urban situation is unfavorable, but the houses are more valuable than in other disadvantaged neighborhoods.
+
+
+#### 3.2. Reduced model 1 (manual variable selection)
+  
+For the second model, the following changes are made:
+- predictors `rm`, `lstat`, `chas`, `indus`, and `zn` are considered unimportant in the full model and will be excluded  
+- the remaining predictors are centered and scaled
+- three observations identified as outliers in the diagnostic plots for the full model are excluded 
+  
+**Model summary**
+
+```{r}
+outlier_rows = c(273, 367,227)
+m2 = train(target ~. -rm -lstat -chas -zn -indus, data = df_train[-outlier_rows,], 
+                 method = "glm", preProc = c("center", "scale"),
+                 trControl = fitControl)
+```
+
+```{r}
+summary(m2)
+```
+
+```{r}
+m2$results
+```
+
+```{r}
+varImp(m2,scale = F)
+```
+  
+We can see that in this reduced model, all predictors are now significant, and the accuracy has even slightly improved compared to the full model (because of outlier removal). Another improvement is the distribution of the deviance residuals that has become more symmetrical around zero.
+
+The interpretation of the coefficients has stayed the same as in the full model.
+  
+#### 3.3. Reduced model 2 (Stepwise Model Selection)  
+  
+The third model is build using an automated stepwise model selection approach that searches the set of predictors that would minimize the AIC. Here, the same outliers as in the second model are excluded.
+  
+**Model summary**  
+```{r echo=F, message=F, warning=F,results='hide'}
+
+m3 = train(target ~. , data = df_train[-outlier_rows,]
+           , method = "glmStepAIC",trControl = fitControl,
+           trace=FALSE)
+```
+
+```{r}
+summary(m3)
+```
+
+```{r}
+m3$results
+```
+
+
+We can see that the stepwise model selection has resulted in a model that is similar to the manually selected one. However it has retained two more predictors: `zn` and `indus`, while the accuracy of the model is comparable to that of the manual selection model.  
+The interpretation of the model coefficients for the most important variables remains the same as above. 
+ 
+  
+### 4. MODEL SELECTION
+
+For the model selection step, the three models build in the previous section will be evaluated on the 20% out-of-sample data not used in the model building process. The predicted class is assigned at >50% probability.
+
+Then, the following classification performance metrics will be compared: (a) accuracy, (b) classification error rate, (c) precision, (d) sensitivity, (e) specificity, (f) F1 score, (g) AUC, and (h) confusion matrix. 
+The best performing model is the one with the highest F1 score and AUC values, as these metrics capture model sensitivity, specificity, and overall performance independent from the class cutoff threshold. 
+
+
+```{r}
+# Predict on out-of-sample data
+
+m1_pred = predict(m1, df_test)
+m2_pred = predict(m2, df_test)
+m3_pred = predict(m3, df_test)
+
+```
+
+The three confusion matrices are provided below.
+```{r}
+cm1 = confusionMatrix(data = m1_pred, reference = df_test$target,positive = "1",mode = "everything")
+cm2 = confusionMatrix(data = m2_pred, reference = df_test$target,positive = "1",mode = "everything")
+cm3 = confusionMatrix(data = m3_pred, reference = df_test$target,positive = "1",mode = "everything")
+```
+
+Confusion matrix: Full model (model 1)
+
+```{r}
+cm1$table
+```
+
+Confusion matrix: manually reduced model (model 2)
+
+```{r}
+cm2$table
+```
+
+Confusion matrix: stepwise selection model (model 3)
+
+```{r}
+cm3$table
+```
+
+Looking at table comparing classification performance metrics between the models provided below,
+we can see that the model *m3* (generated by stepwise selection on outlier-filtered data) performs the best in terms of the F1-score, AUC, and several other metrics. However, the model *m2* is more parsimonious (has two predictors less) and only slightly less precise (AUC of *m2* is just 2.2% lower than the AUC of *m3*).  
+Therefore in practical terms the model *m2* could still be considered as the final model, as it is easier to understand due to a lower number of predictors.
+
+```{r}
+
+models = c("m1", "m2", "m3")
+newdata = df_test
+response_var = "target"
+
+output = data.frame()
+for (i in models){
+  model_pred = predict(eval(parse(text=i)), newdata)
+  ref = df_test$target
+  cm = confusionMatrix(model_pred, reference = ref, positive = "1",mode = "everything")
+  
+  
+  model_metrics = data.frame(
+    row.names = i,
+    accuracy = cm$overall[1],
+    class_error_rate = (cm$table[2,1] + cm$table[1,2])/sum(cm$table),
+    precision = cm$byClass[5],
+    sensitivity = cm$byClass[1],
+    specificity = cm$byClass[2],
+    f1_score = cm$byClass[7],
+    auc = ModelMetrics::auc(ref,model_pred)
+    )
+  output = rbind(output, model_metrics)
+}
+
+knitr::kable(output)
+
+```
+
+**ROC Curves for the three models**
+  
+Classification accuracy between the models can be also compared using ROC curves. 
+
+```{r}
+
+library(pROC)
+roc_rose = plot(roc(as.numeric(ref),as.numeric(m1_pred)), print.auc = TRUE, col = "blue")
+roc_rose = plot(roc(as.numeric(ref),as.numeric(m2_pred)), print.auc = TRUE, 
+                 col = "green", print.auc.y = .4, add = TRUE)
+roc_rose = plot(roc(as.numeric(ref),as.numeric(m3_pred)), print.auc = TRUE, 
+                 col = "red", print.auc.y = .6, add = TRUE)
+```
+
+
+A comparison of the ROC curves shows that the models are indeed similar in performance, and both model *m3* (red curve), and *m2* (green curve) can be selected.
+
+**Predictions on the evaluation dataset**  
+  
+Predictions on the evaluation dataset are made using the model *m3*.
+
+```{r}
+df_eval = read_csv("crime-evaluation-data_modified.csv")
+df_eval$chas = as.factor(df_eval$chas)
+eval_predict = predict(m3,df_eval)
+
+write_csv(data.frame(eval_predict),"model_m3_eval_predictions.csv")
+```
+
+The output of the model on the evaluated data is available under the following URL:
+[link]()
+
+### Appendix
+
+The full R code for the analysis in Rmd format is available under the following URL:
+[link]()
+
+**Additional charts on pairwise relationships between the continous predictors**
+
+The charts below show pairwise scatter plots between continuous variables with color signifying the levels of the target variable.
+```{r include=F}
+
+# Plot scatter for the first 4 features
+feature_subset = c("indus","tax","nox","age","lstat")
+df = df_raw_train[feature_subset]
+
+featurePlot(x = df_raw_train[1:4], 
+            y = df_raw_train$target,
+            plot = "pairs",
+            auto.key = list(columns = 2),
+            par.settings = list(superpose.symbol = list(pch = 1, cex = 0.5,
+                                                   col = c("black", "red")))
+            )
+```
+
+```{r include=F}
+# Plot scatter for the next 4 features
+
+featurePlot(x = df_raw_train[,5:8], 
+            y = df_raw_train$target,
+            plot = "pairs",
+            ## Add a key at the top
+            auto.key = list(columns = 2),
+            par.settings = list(superpose.symbol = list(pch = 1, cex = 0.5,
+                                                   col = c("black", "red"))))
+```
+
+```{r include=F}
+# Plot scatter for the next 4 features
+
+featurePlot(x = df_raw_train[,9:12], 
+            y = df_raw_train$target,
+            plot = "pairs",
+            ## Add a key at the top
+            auto.key = list(columns = 2),
+            par.settings = list(superpose.symbol = list(pch = 1, cex = 0.5,
+                                                   col = c("black", "red"))))
+```
+
+### Reference
+
+https://www.statmethods.net/advgraphs/trellis.html
+https://www.stat.ubc.ca/~jenny/STAT545A/block16_colorsLatticeQualitative.html
+http://topepo.github.io/caret/visualizations.html
