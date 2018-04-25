@@ -3,8 +3,8 @@ title: 'Homework #4: Insurance'
 author: "Dmitriy Vecheruk"
 date: "4/14/2018"
 output:
-  word_document: default
   html_document: default
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -194,22 +194,15 @@ The variables encoded as strings in the input data representing dollar values, e
 
 In addition, spaces in factor variables' levels were replaced by underscores in order to comply with the requirements of the models generating dummy variables from these factors.
 
-```{r}
-
-```
-
-
 ### 2.1. Missing data and near-zero variables
 
 As discussed above, several variables in the dataset have missing observations. However, none of the predictors show near-zero variance.
 
-A simple exclusion of all rows with incomplete data results in exclusion of `r nrow(df)-nrow(df_clean)` rows, or `r round(100*(1-nrow(df_clean)/nrow(df)))`% of observations - a considerable loss of data.
-
-Instead, an imputation of missing data using the predictive mean matching approach implemented in the **mice** package is applied.    
+Instead of removing all rows with incomplete observations, an imputation of missing data using the predictive mean matching approach implemented in the **mice** package is applied.    
 In addition, the continous values were also centered and scaled in several models that were built.
 
 
-```{r echo=F, output='hide'}
+```{r echo=F, message=F, warning=F, output='hide'}
 # Impute the columns with missing values
 
 # install.packages("mice")
@@ -348,7 +341,7 @@ The third model is build using LASSO, a regularized regression approach from the
 The penalty parameter is chosen automatically using cross-validation.
   
 **Model summary**  
-```{r m3}
+```{r m3, cache=T}
 
 library(methods)
 library(glmnet)
@@ -420,11 +413,13 @@ summary(m1_cont$finalModel)
 ```
 
 ```{r}
-m1_cont$results
+knitr::kable(m1_cont$results)
 ```
 
 ```{r}
+par(mfrow=c(2,2))
 plot(m1_cont$finalModel)
+par(mfrow=c(1,1))
 ```
 
 
@@ -446,12 +441,8 @@ The second continuous model tries to alleviate the identified problems by:
 3) centering and scaling the remaining continous predictors  
 4) applying a log-transformation on the response 
   
-  
-```{r}
-plot_histogram(log(df$TARGET_AMT))
-```
 
-```{r}
+```{r cache=T}
 
 df1_train_clean = df1_train[-c(6153,5661,6222),]
 # log(TARGET_AMT+1)
@@ -469,11 +460,13 @@ summary(m2_cont$finalModel)
 
 
 ```{r}
-m2_cont$results
+knitr::kable(m2_cont$results)
 ```
 
 ```{r}
+par(mfrow=c(2,2))
 plot(m2_cont$finalModel)
+par(mfrow=c(1,1))
 ```
   
 From the model summary we can see that the log-transformation of the response has helped solve the problem with the distribution of the residuals. As a result, the Adjusted R-squared metric has grown to 0.22.
@@ -598,7 +591,7 @@ write_csv(data.frame(eval_predict),"model_m3_eval_predictions.csv")
 ```
 
 The output of the model on the evaluated data is available under the following URL:
-[model_m3_eval_predictions.csv]()
+[model_m3_eval_predictions.csv](https://raw.githubusercontent.com/datafeelings/CUNY_DATA_621_Data_Mining/master/Week_12/model_m3_eval_predictions.csv)
 
 ### 4.2. Model selection for the continous response model
 
@@ -639,53 +632,13 @@ write_csv(data.frame(eval1_predict),"model_m1_cont_eval_predictions.csv")
 ```
 
 The output of the model on the evaluated data is available under the following URL:
-[model_m1_cont_eval_predictions.csv]()
+[model_m1_cont_eval_predictions.csv](https://raw.githubusercontent.com/datafeelings/CUNY_DATA_621_Data_Mining/master/Week_12/model_m1_cont_eval_predictions.csv)
 
 ### Appendix
 
 The full R code for the analysis in Rmd format is available under the following URL:
-[hw4_insurance_data.Rmd]()
+[hw4_insurance_data.Rmd](https://github.com/datafeelings/CUNY_DATA_621_Data_Mining/blob/master/Week_12/hw4_insurance_data.Rmd)
 
-**Additional charts on pairwise relationships between the continous predictors**
-
-The charts below show pairwise scatter plots between continuous variables with color signifying the levels of the target variable.
-
-```{r }
-
-# Plot scatter for the first 5 features
-
-featurePlot(x = df_viz$continuous[2:6], 
-            y =df$TARGET_FLAG,
-            plot = "pairs",
-            auto.key = list(columns = 2),
-            par.settings = list(superpose.symbol = list(pch = 1, cex = 0.1,
-                                                   col = c("black", "red")))
-            )
-```
-
-```{r}
-# Plot scatter for the next 5 features
-
-featurePlot(x = df_viz$continuous[7:11], 
-            y =df$TARGET_FLAG,
-            plot = "pairs",
-            auto.key = list(columns = 2),
-            par.settings = list(superpose.symbol = list(pch = 1, cex = 0.1,
-                                                   col = c("black", "red")))
-            )
-```
-
-```{r}
-# Plot scatter for the next 4 features
-
-featurePlot(x = df_viz$continuous[12:15], 
-            y =df$TARGET_FLAG,
-            plot = "pairs",
-            auto.key = list(columns = 2),
-            par.settings = list(superpose.symbol = list(pch = 1, cex = 0.1,
-                                                   col = c("black", "red")))
-            )
-```
 
 ### Reference
   
