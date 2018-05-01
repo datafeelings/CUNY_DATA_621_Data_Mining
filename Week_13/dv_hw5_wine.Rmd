@@ -1,0 +1,345 @@
+---
+title: 'Homework #5: Wine'
+author: "Dmitriy Vecheruk"
+date: "4/14/2018"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+```
+
+### Management summary
+
+
+
+### 1. DATA EXPLORATION 
+
+The training dataset contains 12795 observations of 16 variables (one index, one response, 
+and 14 predictor variables).  
+Each record (row) represents a range of parameters of a wine type being sold such as its chemical
+properties.
+The continuous response variable `TARGET` represents the number of cases of wine that are sold as tasting samples to restaurants and wine stores around the United States.
+
+The **variables** are:
+--INSERT PICTURE BELOW--
+
+
+```{r message=FALSE}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(caret)
+library(DataExplorer)
+library(AppliedPredictiveModeling)
+library(vcd)
+library(gridExtra)
+
+df_raw_train = read.csv("wine-training-data.csv") 
+```
+
+#### 1.1. Univariate analysis
+
+
+```{r}
+plot_overview = function(df, x) {
+df = data.frame(df)
+y = df[,x]
+
+p1 = ggplot(df, aes(x= x, y = y)) + geom_boxplot() + xlab(x) + ylab("value") + 
+  ggtitle(x)
+p2 = ggplot() + geom_histogram(aes(x=y),na.rm = T) + 
+  geom_vline(aes(xintercept=mean(y,na.rm = T)), color = "red",linetype = 2) + xlab(x) +
+   ggtitle("")
+p3 = ggplot() + geom_point(aes(sample=y), stat = "qq", size = 0.1)
+p4 = ggplot()  + geom_density(aes(x=log(y)),na.rm = T) + xlab(paste0("log(",x,")"))
+
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+}
+
+plot_target_cor = function(df,x,trg_var_name){
+
+df_cc = df[,c(x,trg_var_name)]
+df_cc = as.data.frame(df_cc[complete.cases(df_cc),]) 
+trg_cor = cor.test(df_cc[,x],df_cc[,trg_var_name])
+df_cc$x_log = log(df_cc[trg_var_name>0,x])
+trg_log_cor = cor.test(df_cc[df_cc$x_log>0,"x_log"],df_cc[df_cc$x_log>0,trg_var_name])
+
+cor_out = paste("cor:",round(trg_cor$estimate,3),
+                "p-val:", ifelse(trg_cor$p.value<0.01,"<0.01",round(trg_cor$p.value,3)))
+cor_out_log = paste("cor (log):",round(trg_log_cor$estimate,3),
+                "p-val:", ifelse(trg_log_cor$p.value<0.01,"<0.01",round(trg_log_cor$p.value,3)))
+
+x_pos = quantile(df_cc[,x],0.9)
+y_pos_0 = quantile(df_cc[,trg_var_name],0.006)
+y_pos_1 = quantile(df_cc[,trg_var_name],0.004)
+
+p = ggplot(data = df_cc, aes_string(x=x,y=trg_var_name)) +
+  geom_point(size=1, alpha = 0.5) + geom_smooth(method = "loess") +
+  annotate("text", x = x_pos, y = y_pos_0,label = cor_out,size=3) +
+  annotate("text", x = x_pos, y = y_pos_1,label = cor_out_log, size=3) +
+  ylab(trg_var_name) + ggtitle(paste(x,"vs",trg_var_name))
+
+grid.arrange(p,nrow = 1)
+}
+
+plot_overview_target = function(df,x,trg_var_name){
+  grobs = list(plot_overview(df,x),plot_target_cor(df,x,trg_var_name))
+  grid.arrange(grobs = grobs, nrow = 2,widths=c(4,4), 
+               top = paste(x,"overview and correlation vs.",trg_var_name))
+}
+```
+
+
+
+Summaries for the individual variables are provided below.  
+```{r}
+summary(df_raw_train)
+
+df = df_raw_train %>% select (-INDEX)
+```
+
+```{r}
+plot_missing(df_raw_train, title = "Percentage of missing data per variable")
+```
+  
+From the summaries and the chart above we can see that all variables are continuous and that multiple variables have missing data, but the amount of NAs is not very high with the exception of the `STARS` variable. 
+
+A check for near-zero variance did not show a positive result for any variable.
+
+```{r,eval=FALSE, include=F}
+# Check for NZV
+
+nzv = nearZeroVar(df, saveMetrics= TRUE)
+knitr::kable(nzv)
+```
+
+
+
+Per-variable distribution analysis is provided below (excluding the `INDEX` variable, which is immaterial to the analysis and would not be regarded further).
+  
+  
+```{r}
+trg_var = "TARGET"
+pred_vars = setdiff(names(df),trg_var)
+
+for (i in names(df)){
+  plot_overview(df=df,x = i)
+}
+```
+
+
+```{r}
+
+for (i in pred_vars){
+  plot_target_cor(df = df[complete.cases(df),], x=i,trg_var_name ="TARGET")
+}
+
+
+```
+
+
+
+
+  
+
+
+  
+#### 1.2. Bivariate analysis
+  
+The pairwise correlations between the continuous variables are displayed below
+
+```{r}
+## View correlation of all continuous varaibles (for complete cases)
+
+plot_correlation(df[complete.cases(df),],
+                 type = "continuous",title = "Pairwise correlations between continuous variables")
+```
+
+  
+
+### 2. DATA PREPROCESSING  
+  
+### 2.1. Data cleaning
+
+
+```{r echo=F, message=F, warning=F, output='hide'}
+# Impute the columns with missing values
+
+# install.packages("mice")
+# library(mice)
+
+```
+
+
+
+### 3. BUILD MODELS
+
+
+### 3.1. Build poisson regression models 
+  
+
+#### 3.1.1. Poission model 1  
+  
+
+
+```{r p_m1}
+
+set.seed(123) 
+
+# # Imputing missing data on the binary dataset
+# df_binary = df_imp %>% select(-TARGET_AMT)
+# 
+# 
+# # Split into training and test
+# df_index = createDataPartition(df_binary$TARGET_FLAG, p = .8, list = FALSE)
+# 
+# df_train = df_binary[ df_index, ]
+# df_test = df_binary[-df_index, ]
+# 
+# 
+# # Set up the CV routine 
+# fitControl = trainControl(## 5-fold CV
+#                            method = "repeatedcv",
+#                            number = 5,
+#                            ## repeated 5 times
+#                            repeats = 5)
+
+```
+
+```{r warning =F}
+# Train the full model
+# library("e1071")
+# 
+# m1 = train(TARGET ~ ., data = df_train, 
+#                  method = "glm",
+#                  trControl = fitControl)
+
+```
+
+
+**Model summary**
+
+```{r}
+# summary(m1$finalModel)
+```
+
+```{r}
+# knitr::kable(m1$results)
+```
+
+```{r}
+# varImp(m1$finalModel,scale = F)
+```
+
+  
+From the model summary we can see the following:  
+  
+ 
+  
+**Interpretation of the regression coefficients**  
+  
+
+The diagnostic plots for the model can be generated using the R code provided in the appendix.
+
+```{r include=F, eval=F}
+# plot(m1$finalModel)
+```
+
+
+#### 3.1.2. Poisson model 2 (
+  
+For the second model, the following changes are made:  
+
+
+  
+**Model summary**
+
+```{r m2}
+# m2 = train(TARGET_FLAG ~. -AGE -YOJ -SEX -RED_CAR -CAR_AGE, data = df_train, 
+#                  method = "glm", preProc = c("center", "scale"),
+#                  trControl = fitControl)
+```
+
+```{r}
+# summary(m2$finalModel)
+```
+
+```{r}
+# m2$results
+```
+
+```{r}
+# varImp(m2,scale = F)
+```
+  
+
+The interpretation of the coefficients has stayed the same as in the full model.
+  
+### 3.2. Build negative binomial regression models
+  
+
+#### 3.2.1. Negative binomial model 1  
+#### 3.2.2. negative binomial model 2  
+  
+  
+### 3.3. Build multiple linear regression models
+  
+
+#### 3.3.1. Multiple linear model 1  
+#### 3.3.2. Multiple linear model 2  
+  
+
+### 4. MODEL SELECTION
+  
+
+The performance of the continous models will be compared based on RMSE on the out-of sample data
+
+```{r}
+# m1_cont_pred = predict(m1_cont, df1_test)
+# m2_cont_pred = exp(predict(m2_cont, df1_test))-1
+```
+
+```{r}
+# m1_cont_rmse = RMSE(pred = m1_cont_pred, obs = df1_test$TARGET_AMT,na.rm = T)
+# m2_cont_rmse = RMSE(pred = m2_cont_pred, obs = df1_test$TARGET_AMT,na.rm = T)
+# 
+# res = data.frame(model=c("model1","model2"),RMSE=c(m1_cont_rmse,m2_cont_rmse))
+# knitr::kable(res)
+```
+
+The RMSE for the first (full) model is lower. From the charts below it is clear that the model two consistently produces very low values as compared to the true result.
+
+```{r}
+# par(mfrow=c(1,2))
+# plot(m1_cont_pred,df1_test$TARGET_AMT,main="model 1",xlab = "fitted value", ylab="actual value")
+# plot(m2_cont_pred,df1_test$TARGET_AMT,main="model 2",xlab = "fitted value", ylab="actual value")
+# par(mfrow=c(1,1))
+```
+  
+So the initial full model will be selected for now to produce predictions on the evaluation data. However, further tuning could provide better precision of the predictions.
+
+**Predictions on the evaluation dataset**  
+  
+Predictions on the evaluation dataset are made using the model *m1_cont*.
+
+```{r}
+# eval1_predict = predict(m1_cont,data.frame(df_eval))
+# write_csv(data.frame(eval1_predict),"model_m1_cont_eval_predictions.csv")
+
+```
+
+The output of the model on the evaluated data is available under the following URL:
+[]()
+
+### Appendix
+
+The full R code for the analysis in Rmd format is available under the following URL:
+[]()
+
+
+### Reference
+  
