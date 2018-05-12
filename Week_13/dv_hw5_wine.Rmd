@@ -3,8 +3,8 @@ title: 'Homework #5: Wine'
 author: "Dmitriy Vecheruk"
 date: "4/14/2018"
 output:
-  html_document: default
   word_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -200,7 +200,7 @@ for (i in cor_vars){
 
 ```
   
-Summary of the findings from the univariate analysis:
+Summary of the findings from the bivariate analysis:
   
 1) Most of the variables are uncorrelated with the response, and only a few show moderate correlations with `TARGET`, namely: `STARS`, `AcidIndex`, `LabelAppeal`, `VolatileAcidity`, and `Alcohol`.
 2) There is virtually no collinearity between the predictors (with the exception of `STARS` and `LabelAppeal` (r=+0.33), where it is not strong enough to cause concern)
@@ -636,23 +636,23 @@ rmse_result$RMSE = c(
 knitr::kable(rmse_result)
 ```
 
-We can see that on out-of-sample data, the linear model with the automatically selected set of predictors has performed on par with the full linear and full poisson models. 
+We can see that on out-of-sample data, the linear model with the automatically selected set of predictors has performed on par with the full linear and full poisson models, and somewhat better than the reduced poisson model. 
 
-Comparing the fitted values against test data we can see that the linear model is fairly constant in the errors at each level of the response. However, it fails to capture the highest levels (count of 7 and 8 cases). The poisson model has a visibly higher error on the zero count of the response, but does provide several predictions for the highest levels of demand.
+Comparing the fitted values against test data we can see that the linear model is fairly constant in the errors at each level of the response. However, it fails to capture the highest levels (count of 7 and 8 cases). The reduced poisson model has a higher error distribution, but does provide several predictions for the highest levels of demand. The benefit of the poisson model in this case is that it would never estimate a negative value of the response, which is a requirement in this case.
 
 ```{r}
 par(mfrow=c(1,2))
 plot(lm_stepwise_pred,df_test$TARGET,main="Linear stepwise reduced model",xlab = "fitted value", ylab="actual value")
-plot(poisson_full_pred,df_test$TARGET,main="Poisson full model",xlab = "fitted value", ylab="actual value")
+plot(poisson_reduced_pred,df_test$TARGET,main="Poisson reduced model",xlab = "fitted value", ylab="actual value")
 
 par(mfrow=c(1,1))
 ```
   
 
-Due to its simplicity in terms of the number of predictors and the interpretation, the reduced linear model is chosen as the best one for generating predictions on the evaluation data set.
+Due to the nature of the response variable being a count, and to the only slightly worse performance on the test data albeit the low number of predictors, the reduced poisson model is chosen as the best one for generating predictions on the evaluation data set.
 
 The model formula is:
-*TARGET ~ (Density + LabelAppeal + AcidIndex + pH + ResidualSugar + Chlorides + FreeSulfurDioxide + Alcohol + STARS + FixedAcidity + VolatileAcidity + CitricAcid + TotalSulfurDioxide + Sulphates)*
+*TARGET ~ LabelAppeal + STARS + AcidIndex + VolatileAcidity + TotalSulfurDioxide + Alcohol*
   
 
 However, further tuning of the negative binomial family models (e.g. using zero-inflated model) could provide better precision of the predictions, especially for the lower end of the distribution of the target variable.
@@ -687,19 +687,19 @@ Predictions on the evaluation dataset are made using the model *lm_stepwise*.
 
 ```{r}
 
-eval_predict = predict(lm_stepwise,data.frame(df_eval_trans),type = "response")
+eval_predict = predict(poisson_reduced,data.frame(df_eval_trans),type = "response")
 eval_out = data.frame(eval_predict)
 write_csv(data.frame(eval_predict),"wine-evaluation_predictions.csv")
 
 ```
 
 The output of the model on the evaluated data is available under the following URL:
-[]()
+[https://raw.githubusercontent.com/datafeelings/CUNY_DATA_621_Data_Mining/master/Week_13/wine-evaluation_predictions.csv](https://raw.githubusercontent.com/datafeelings/CUNY_DATA_621_Data_Mining/master/Week_13/wine-evaluation_predictions.csv)
 
 ### Appendix
 
 The full R code for the analysis in Rmd format is available under the following URL:
-[]()
+[https://github.com/datafeelings/CUNY_DATA_621_Data_Mining/blob/master/Week_13/dv_hw5_wine.Rmd](https://github.com/datafeelings/CUNY_DATA_621_Data_Mining/blob/master/Week_13/dv_hw5_wine.Rmd)
 
 
 ### Reference
